@@ -1,0 +1,145 @@
+/*
+ * main.c
+ *
+ *  Created on: Jan 3, 2023
+ *      Author: HP
+ */
+
+#include "types1.h"
+#include "Bit_Math.h"
+
+#include "DIO_interface.h"
+#include "ADC_Interface.h"
+#include "PWM_interface.h"
+#include "EXTI_Interface.h"
+#include "CLCD_interface.h"
+#include "KPD_interface.h"
+#include "DC_Motor_Interface.h"
+#include "Global_interface.h"
+
+#include "avr/delay.h"
+
+
+u16 Milli_Volt , Temperature , ADC_Reading ;
+void Temperature_Mode_Fun(void);
+void Reset_Fun(void);
+
+void main(void)
+{
+	/*Set Data Port As Output*/
+	DIO_vidSetPortDir(DIO_PORTD , 0b11111111);
+	/*Set Control Port As Output*/
+	DIO_vidSetPinDir(DIO_PORTB , DIO_PIN0 , DIO_OUTPUT);
+	DIO_vidSetPinDir(DIO_PORTB , DIO_PIN1 , DIO_OUTPUT);
+	DIO_vidSetPinDir(DIO_PORTB , DIO_PIN2 , DIO_OUTPUT);
+
+	/*Make Col As output and Rows as Input*/
+	DIO_vidSetPortDir(DIO_PORTC , 0b00001111);
+
+	/*Initial Value for Keypad*/
+	DIO_vidSetPortVal(DIO_PORTC , 0b11111111);
+
+	/*Make PINA0 for LM35 AS Input*/
+	DIO_vidSetPinDir(DIO_PORTA , DIO_PIN0 , DIO_INPUT);
+
+	/*Make PORTA Direction as Output For LEDs*/
+	DIO_vidSetPinDir(DIO_PORTA , DIO_PIN1 , DIO_OUTPUT);
+	DIO_vidSetPinDir(DIO_PORTA , DIO_PIN2 , DIO_OUTPUT);
+	DIO_vidSetPinDir(DIO_PORTA , DIO_PIN3 , DIO_OUTPUT);
+
+	/*Set OCR PIN As OUTPUT*/
+	DIO_vidSetPinDir(DIO_PORTB , DIO_PIN3 , DIO_OUTPUT);
+
+	/*Set PORTB PIN5 for Buzzer as OUTPUT*/
+	DIO_vidSetPinDir(DIO_PORTA , DIO_PIN4 , DIO_OUTPUT);
+
+	/*Make INT0 PIN As Input*/
+	DIO_vidSetPinDir(DIO_PORTD , DIO_PIN2 , DIO_INPUT);
+
+	/*Activate PULL UP resistor*/
+	DIO_vidSetPinVal(DIO_PORTD , DIO_PIN2 , DIO_HIGH);
+
+	CLCD_voidInit();
+	ADC_vidInit();
+	Timer0_FastPWM_Mode();
+	EXTI_Int0_Inti();
+	EXTI_INT0SetCallBack(&Reset_Fun);
+	Enable_Global_Interrupt();
+
+	CLCD_vidSendString("Welcome On LCD") ;
+	_delay_ms(3000);
+	CLCD_voidSendCommand(1);
+	CLCD_vidSendString("Temperature:") ;
+
+	while (1)
+	{
+		ADC_u8StatrtConversionAsynch(0 , &ADC_Reading , &Temperature_Mode_Fun);
+	}
+}
+
+
+void Temperature_Mode_Fun(void)
+{
+	Milli_Volt = (u16)(((u32)ADC_Reading * 500) / 256) ;
+	Temperature = Milli_Volt / 10 ;
+
+	switch(Temperature)
+	{
+	case 0 ... 21 :
+	CLCD_GoToXY(0 , 13) ;
+	CLCD_vidSendString("      ");
+	CLCD_GoToXY(1 , 5);
+	CLCD_vidSendString("             ");
+	CLCD_GoToXY(0 , 13) ;
+	CLCD_write_Number(Temperature);
+	CLCD_GoToXY(1 , 5);
+	CLCD_vidSendString("LOW");
+	TIMR0_VidSetCompMatchVal(0);
+	DIO_vidSetPinVal(DIO_PORTA , DIO_PIN3 , DIO_HIGH);
+	DIO_vidSetPinVal(DIO_PORTA , DIO_PIN2 , DIO_LOW);
+	DIO_vidSetPinVal(DIO_PORTA , DIO_PIN1 , DIO_LOW);
+	_delay_ms(1000);
+	break ;
+	case 22 ... 28 :
+	CLCD_GoToXY(0,13);
+	CLCD_vidSendString("    ");
+	CLCD_GoToXY(1 , 5);
+	CLCD_vidSendString("             ");
+	CLCD_GoToXY(0 , 13);
+	CLCD_write_Number(Temperature);
+	CLCD_GoToXY(1 , 5) ;
+	CLCD_vidSendString("NORMAL") ;
+	TIMR0_VidSetCompMatchVal(128);
+	DIO_vidSetPinVal(DIO_PORTA , DIO_PIN3 , DIO_LOW);
+	DIO_vidSetPinVal(DIO_PORTA , DIO_PIN2 , DIO_HIGH);
+	DIO_vidSetPinVal(DIO_PORTA , DIO_PIN1 , DIO_LOW);
+	_delay_ms(1000);
+	break ;
+	case 35 ... 150 :
+	CLCD_GoToXY(0,13);
+	CLCD_vidSendString("    ");
+	CLCD_GoToXY(1 , 5);
+	CLCD_vidSendString("            ");
+	CLCD_GoToXY(0 , 13);
+	CLCD_write_Number(Temperature);
+	CLCD_GoToXY(1 , 5) ;
+	CLCD_vidSendString("HIGH !") ;
+	TIMR0_VidSetCompMatchVal(255);
+	DIO_vidSetPinVal(DIO_PORTA , DIO_PIN3 , DIO_LOW);
+	DIO_vidSetPinVal(DIO_PORTA , DIO_PIN2 , DIO_LOW);
+	for(u8 i=0 ; i<6 ; i++)
+	{
+		static u8 Toggle_bit = 0;
+		TOGG_BIT(0 , Toggle_bit);
+		DIO_vidSetPinVal(DIO_PORTA , DIO_PIN1 , Toggle_bit);
+		DIO_vidSetPinVal(DIO_PORTB , DIO_PIN5 , Toggle_bit);
+		_delay_ms(500);
+	}
+	break ;
+	}
+}
+
+void Reset_Fun(void)
+{
+	Temperature_Mode_Fun();
+}
